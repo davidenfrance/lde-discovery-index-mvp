@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS capability_records (
+  record_id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  principal_id TEXT NOT NULL,
+  display_name TEXT,
+  tasks TEXT[] NOT NULL,
+  jurisdiction TEXT NOT NULL,
+  settlement_currency TEXT NOT NULL,
+  value_band_usd_min INTEGER NOT NULL,
+  value_band_usd_max INTEGER NOT NULL,
+  endpoints JSONB NOT NULL DEFAULT '{}'::jsonb,
+  evidence JSONB,
+  issued_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  key_id TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
