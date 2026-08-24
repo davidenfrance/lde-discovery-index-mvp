@@ -1,9 +1,21 @@
-import { createHmac } from "crypto";
+/**
+ * Generate an Ed25519 wallet keypair and sign a sample capability record.
+ * Private key stays local. Put the public address in ALLOWED_WALLET_ADDRESSES on Vercel.
+ */
+import { generateKeyPairSync, sign } from "crypto";
+import { writeFileSync } from "fs";
 
-const secret = process.env.WALLET_AI_HMAC_SECRET || "change-me-mvp-secret";
-const key_id = "mvp-wallet-ai-2026";
+const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+const jwk = publicKey.export({ format: "jwk" });
+const address = Buffer.from(jwk.x, "base64url").toString("hex");
+const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 
-const record = {
+writeFileSync("wallet-private.pem", pem);
+console.log("Public address (set on Vercel ALLOWED_WALLET_ADDRESSES):\n" + address);
+console.log("\nPrivate key written to wallet-private.pem (keep on the wallet only)\n");
+
+const key_id = address;
+const recordCore = {
   record_id: "rec-demo-001",
   agent_id: "agent-escrow-lde-01",
   principal_id: "prin-lde-settle-01",
@@ -17,11 +29,20 @@ const record = {
   key_id,
 };
 
-record.signature = createHmac("sha256", secret)
-  .update(JSON.stringify(record))
-  .digest("hex");
+const publishMessage = JSON.stringify(recordCore);
+const signature = sign(null, Buffer.from(publishMessage, "utf8"), privateKey).toString("hex");
 
-console.log(JSON.stringify({ ...record, display_name: "LDE wallet-to-wallet escrow settle", endpoints: { settle: "bundle://escrow/settle" }, evidence: { mandate_required: true } }, null, 2));
+const body = {
+  ...recordCore,
+  display_name: "LDE wallet-to-wallet escrow settle",
+  endpoints: { settle: "bundle://escrow/settle" },
+  evidence: { mandate_required: true },
+  signature,
+};
 
-const revoke = { action: "revoke", record_id: record.record_id, key_id };
-console.log("REVOKE_SIG", createHmac("sha256", secret).update(JSON.stringify(revoke)).digest("hex"));
+console.log("POST /api/v1/records body:\n" + JSON.stringify(body, null, 2));
+
+const revokeMessage = JSON.stringify({ action: "revoke", record_id: recordCore.record_id, key_id });
+const revokeSig = sign(null, Buffer.from(revokeMessage, "utf8"), privateKey).toString("hex");
+console.log("\nPOST /api/v1/records/rec-demo-001/revoke body:");
+console.log(JSON.stringify({ key_id, signature: revokeSig }, null, 2));

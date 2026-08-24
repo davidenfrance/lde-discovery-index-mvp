@@ -1,20 +1,44 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import {
+  createPublicKey,
+  createPrivateKey,
+  verify,
+  generateKeyPairSync,
+  sign,
+} from "crypto";
 import type { CapabilityRecord } from "./types";
 
-export function allowedKeyIds(): string[] {
-  return (process.env.ALLOWED_WALLET_KEY_IDS || "mvp-wallet-ai-2026")
+/** Allowed wallet public addresses (Ed25519 public keys as hex). */
+export function allowedWalletAddresses(): string[] {
+  const primary = process.env.ALLOWED_WALLET_ADDRESSES || "";
+  const legacy = process.env.ALLOWED_WALLET_KEY_IDS || "";
+  return `${primary},${legacy}`
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s.trim().toLowerCase().replace(/^0x/, ""))
     .filter(Boolean);
 }
 
-function secret(): string {
-  const s = process.env.WALLET_AI_HMAC_SECRET;
-  if (!s) throw new Error("WALLET_AI_HMAC_SECRET is not set");
-  return s;
+export function normalizeAddress(address: string): string {
+  return address.trim().toLowerCase().replace(/^0x/, "");
 }
 
-export function canonicalPublishPayload(record: Omit<CapabilityRecord, "signature" | "status"> & { status?: string }): string {
+function publicKeyFromAddress(addressHex: string) {
+  const raw = Buffer.from(normalizeAddress(addressHex), "hex");
+  if (raw.length !== 32) {
+    throw new Error("wallet_address_must_be_32_byte_ed25519_public_key_hex");
+  }
+  return createPublicKey({
+    key: {
+      kty: "OKP",
+      crv: "Ed25519",
+      x: raw.toString("base64url"),
+    },
+    format: "jwk",
+  });
+}
+
+export function canonicalPublishPayload(
+  record: Omit<CapabilityRecord, "signature" | "status"> & { status?: string }
+): string {
   const body = {
     record_id: record.record_id,
     agent_id: record.agent_id,
@@ -31,34 +55,53 @@ export function canonicalPublishPayload(record: Omit<CapabilityRecord, "signatur
   return JSON.stringify(body);
 }
 
-export function signPublish(record: Omit<CapabilityRecord, "signature" | "status">): string {
-  return createHmac("sha256", secret()).update(canonicalPublishPayload(record)).digest("hex");
-}
-
-export function verifyPublishSignature(record: CapabilityRecord): boolean {
-  if (!record.signature || !record.key_id) return false;
-  if (!allowedKeyIds().includes(record.key_id)) return false;
-  const expected = signPublish(record);
-  const a = Buffer.from(expected, "hex");
-  const b = Buffer.from(record.signature, "hex");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 export function canonicalRevokePayload(record_id: string, key_id: string): string {
   return JSON.stringify({ action: "revoke", record_id, key_id });
 }
 
-export function signRevoke(record_id: string, key_id: string): string {
-  return createHmac("sha256", secret()).update(canonicalRevokePayload(record_id, key_id)).digest("hex");
+function verifyEd25519(message: string, addressHex: string, signatureHex: string): boolean {
+  try {
+    const address = normalizeAddress(addressHex);
+    if (!allowedWalletAddresses().includes(address)) return false;
+    const key = publicKeyFromAddress(address);
+    const sig = Buffer.from(signatureHex.replace(/^0x/, ""), "hex");
+    return verify(null, Buffer.from(message, "utf8"), key, sig);
+  } catch {
+    return false;
+  }
 }
 
-export function verifyRevokeSignature(record_id: string, key_id: string, signature: string): boolean {
+/**
+ * Publish auth: key_id is the wallet public address (Ed25519 pubkey hex).
+ * signature is Ed25519 over the canonical publish payload.
+ * Private key never leaves the wallet.
+ */
+export function verifyPublishSignature(record: CapabilityRecord): boolean {
+  if (!record.signature || !record.key_id) return false;
+  return verifyEd25519(canonicalPublishPayload(record), record.key_id, record.signature);
+}
+
+export function verifyRevokeSignature(
+  record_id: string,
+  key_id: string,
+  signature: string
+): boolean {
   if (!signature || !key_id) return false;
-  if (!allowedKeyIds().includes(key_id)) return false;
-  const expected = signRevoke(record_id, key_id);
-  const a = Buffer.from(expected, "hex");
-  const b = Buffer.from(signature, "hex");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  return verifyEd25519(canonicalRevokePayload(record_id, key_id), key_id, signature);
+}
+
+/** Local/dev helper only — Wallet AI holds the real private key. */
+export function generateWalletKeypair(): { address: string; privateKeyPkcs8Pem: string } {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const jwk = publicKey.export({ format: "jwk" }) as { x?: string };
+  const address = Buffer.from(jwk.x || "", "base64url").toString("hex");
+  return {
+    address,
+    privateKeyPkcs8Pem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  };
+}
+
+export function signWithPem(message: string, privateKeyPem: string): string {
+  const key = createPrivateKey(privateKeyPem);
+  return sign(null, Buffer.from(message, "utf8"), key).toString("hex");
 }
