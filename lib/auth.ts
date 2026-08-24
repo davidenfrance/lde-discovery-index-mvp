@@ -7,24 +7,22 @@ import {
 } from "crypto";
 import type { CapabilityRecord } from "./types";
 
-/** Allowed wallet public addresses (Ed25519 public keys as hex). */
-export function allowedWalletAddresses(): string[] {
-  const primary = process.env.ALLOWED_WALLET_ADDRESSES || "";
-  const legacy = process.env.ALLOWED_WALLET_KEY_IDS || "";
-  return `${primary},${legacy}`
-    .split(",")
-    .map((s) => s.trim().toLowerCase().replace(/^0x/, ""))
-    .filter(Boolean);
+/**
+ * Confirmed model:
+ * - No server allow-list of wallets.
+ * - Wallet ID = Ed25519 public key burned into the wallet; bound on each capability record as key_id.
+ * - Locator + a separate index public key are burned into the wallet so the Wallet AI can verify the Discovery Index is not fake.
+ * - Private keys never leave the wallet (or the index operator's secure store for the index key).
+ */
+
+export function normalizeHex(value: string): string {
+  return value.trim().toLowerCase().replace(/^0x/, "");
 }
 
-export function normalizeAddress(address: string): string {
-  return address.trim().toLowerCase().replace(/^0x/, "");
-}
-
-function publicKeyFromAddress(addressHex: string) {
-  const raw = Buffer.from(normalizeAddress(addressHex), "hex");
+function publicKeyFromHex(pubHex: string) {
+  const raw = Buffer.from(normalizeHex(pubHex), "hex");
   if (raw.length !== 32) {
-    throw new Error("wallet_address_must_be_32_byte_ed25519_public_key_hex");
+    throw new Error("public_key_must_be_32_byte_ed25519_hex");
   }
   return createPublicKey({
     key: {
@@ -34,6 +32,16 @@ function publicKeyFromAddress(addressHex: string) {
     },
     format: "jwk",
   });
+}
+
+function verifyEd25519(message: string, publicKeyHex: string, signatureHex: string): boolean {
+  try {
+    const key = publicKeyFromHex(publicKeyHex);
+    const sig = Buffer.from(normalizeHex(signatureHex), "hex");
+    return verify(null, Buffer.from(message, "utf8"), key, sig);
+  } catch {
+    return false;
+  }
 }
 
 export function canonicalPublishPayload(
@@ -50,35 +58,24 @@ export function canonicalPublishPayload(
     value_band_usd_max: record.value_band_usd_max,
     issued_at: record.issued_at,
     expires_at: record.expires_at,
-    key_id: record.key_id,
+    key_id: normalizeHex(record.key_id),
   };
   return JSON.stringify(body);
 }
 
 export function canonicalRevokePayload(record_id: string, key_id: string): string {
-  return JSON.stringify({ action: "revoke", record_id, key_id });
+  return JSON.stringify({
+    action: "revoke",
+    record_id,
+    key_id: normalizeHex(key_id),
+  });
 }
 
-function verifyEd25519(message: string, addressHex: string, signatureHex: string): boolean {
-  try {
-    const address = normalizeAddress(addressHex);
-    if (!allowedWalletAddresses().includes(address)) return false;
-    const key = publicKeyFromAddress(address);
-    const sig = Buffer.from(signatureHex.replace(/^0x/, ""), "hex");
-    return verify(null, Buffer.from(message, "utf8"), key, sig);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Publish auth: key_id is the wallet public address (Ed25519 pubkey hex).
- * signature is Ed25519 over the canonical publish payload.
- * Private key never leaves the wallet.
- */
 export function verifyPublishSignature(record: CapabilityRecord): boolean {
   if (!record.signature || !record.key_id) return false;
-  return verifyEd25519(canonicalPublishPayload(record), record.key_id, record.signature);
+  const keyId = normalizeHex(record.key_id);
+  if (keyId.length !== 64) return false;
+  return verifyEd25519(canonicalPublishPayload(record), keyId, record.signature);
 }
 
 export function verifyRevokeSignature(
@@ -87,10 +84,50 @@ export function verifyRevokeSignature(
   signature: string
 ): boolean {
   if (!signature || !key_id) return false;
-  return verifyEd25519(canonicalRevokePayload(record_id, key_id), key_id, signature);
+  const keyId = normalizeHex(key_id);
+  if (keyId.length !== 64) return false;
+  return verifyEd25519(canonicalRevokePayload(record_id, keyId), keyId, signature);
 }
 
-/** Local/dev helper only — Wallet AI holds the real private key. */
+export function canonicalIndexIdentity(payload: {
+  index_id: string;
+  service: string;
+  issued_at: string;
+}): string {
+  return JSON.stringify({
+    index_id: payload.index_id,
+    service: payload.service,
+    issued_at: payload.issued_at,
+  });
+}
+
+export function signIndexIdentity(payload: {
+  index_id: string;
+  service: string;
+  issued_at: string;
+}): { statement: string; signature: string; public_key_hint?: string } {
+  const pem = process.env.INDEX_PRIVATE_KEY_PEM;
+  if (!pem) {
+    throw new Error("INDEX_PRIVATE_KEY_PEM is not set");
+  }
+  const statement = canonicalIndexIdentity(payload);
+  const key = createPrivateKey(pem);
+  const signature = sign(null, Buffer.from(statement, "utf8"), key).toString("hex");
+  return {
+    statement,
+    signature,
+    public_key_hint: process.env.INDEX_PUBLIC_KEY_HEX || undefined,
+  };
+}
+
+export function verifyIndexIdentity(
+  statementJson: string,
+  signatureHex: string,
+  burnedIndexPublicKeyHex: string
+): boolean {
+  return verifyEd25519(statementJson, burnedIndexPublicKeyHex, signatureHex);
+}
+
 export function generateWalletKeypair(): { address: string; privateKeyPkcs8Pem: string } {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const jwk = publicKey.export({ format: "jwk" }) as { x?: string };
