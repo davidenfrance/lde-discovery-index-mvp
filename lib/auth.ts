@@ -7,16 +7,19 @@ import {
 } from "crypto";
 import type { CapabilityRecord } from "./types";
 
-/**
- * Confirmed model:
- * - No server allow-list of wallets.
- * - Wallet ID = Ed25519 public key burned into the wallet; bound on each capability record as key_id.
- * - Locator + a separate index public key are burned into the wallet so the Wallet AI can verify the Discovery Index is not fake.
- * - Private keys never leave the wallet (or the index operator's secure store for the index key).
- */
-
 export function normalizeHex(value: string): string {
   return value.trim().toLowerCase().replace(/^0x/, "");
+}
+
+/** Accept multiline PEM or Vercel one-line PEM with literal \\n. */
+export function normalizePem(raw: string): string {
+  let s = raw.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  s = s.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
+  if (!s.endsWith("\n")) s += "\n";
+  return s;
 }
 
 function publicKeyFromHex(pubHex: string) {
@@ -106,10 +109,11 @@ export function signIndexIdentity(payload: {
   service: string;
   issued_at: string;
 }): { statement: string; signature: string; public_key_hint?: string } {
-  const pem = process.env.INDEX_PRIVATE_KEY_PEM;
-  if (!pem) {
+  const raw = process.env.INDEX_PRIVATE_KEY_PEM;
+  if (!raw) {
     throw new Error("INDEX_PRIVATE_KEY_PEM is not set");
   }
+  const pem = normalizePem(raw);
   const statement = canonicalIndexIdentity(payload);
   const key = createPrivateKey(pem);
   const signature = sign(null, Buffer.from(statement, "utf8"), key).toString("hex");
@@ -139,6 +143,6 @@ export function generateWalletKeypair(): { address: string; privateKeyPkcs8Pem: 
 }
 
 export function signWithPem(message: string, privateKeyPem: string): string {
-  const key = createPrivateKey(privateKeyPem);
+  const key = createPrivateKey(normalizePem(privateKeyPem));
   return sign(null, Buffer.from(message, "utf8"), key).toString("hex");
 }
