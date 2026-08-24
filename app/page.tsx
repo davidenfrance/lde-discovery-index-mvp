@@ -8,7 +8,7 @@ export default function Home() {
         <li>GET /api/v1/health</li>
         <li>GET /api/v1/records</li>
         <li>POST /api/v1/records (signed MVP Wallet AI)</li>
-        <li>POST /api/v1/records/{id}/revoke (signed)</li>
+        <li>POST /api/v1/records/{"{id}"}/revoke (signed)</li>
       </ul>
       <p>Verified. Validated. Vested.</p>
     </main>
