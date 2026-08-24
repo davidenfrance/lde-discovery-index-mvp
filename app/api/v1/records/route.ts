@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, listLiveRecords, upsertRecord } from "@/lib/db";
-import { verifyPublishSignature } from "@/lib/auth";
+import { normalizeHex, verifyPublishSignature } from "@/lib/auth";
 import type { CapabilityRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -54,10 +54,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "tasks_required" }, { status: 400 });
     }
     if (!verifyPublishSignature(body)) {
-      return NextResponse.json({ error: "unsigned_or_unrecognised_wallet_ai" }, { status: 401 });
+      return NextResponse.json({ error: "invalid_wallet_signature" }, { status: 401 });
     }
     const saved = await upsertRecord({
       ...body,
+      key_id: normalizeHex(body.key_id),
       endpoints: body.endpoints || {},
       status: "active",
     });

@@ -121,3 +121,12 @@ export async function revokeRecord(record_id: string): Promise<boolean> {
   `;
   return rows.length > 0;
 }
+
+export async function getRecordKeyId(record_id: string): Promise<string | null> {
+  const db = sql();
+  const rows = await db`
+    SELECT key_id FROM capability_records WHERE record_id = ${record_id} LIMIT 1
+  `;
+  if (!rows.length) return null;
+  return String((rows[0] as Record<string, unknown>).key_id);
+}

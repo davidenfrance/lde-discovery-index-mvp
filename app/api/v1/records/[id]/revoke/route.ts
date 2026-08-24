@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureSchema, revokeRecord } from "@/lib/db";
-import { verifyRevokeSignature } from "@/lib/auth";
+import { ensureSchema, revokeRecord, getRecordKeyId } from "@/lib/db";
+import { normalizeHex, verifyRevokeSignature } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,14 @@ export async function POST(
       return NextResponse.json({ error: "missing_signature" }, { status: 400 });
     }
     if (!verifyRevokeSignature(id, body.key_id, body.signature)) {
-      return NextResponse.json({ error: "unsigned_or_unrecognised_wallet_ai" }, { status: 401 });
+      return NextResponse.json({ error: "invalid_wallet_signature" }, { status: 401 });
+    }
+    const storedKey = await getRecordKeyId(id);
+    if (!storedKey) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    if (normalizeHex(storedKey) !== normalizeHex(body.key_id)) {
+      return NextResponse.json({ error: "wallet_id_mismatch" }, { status: 403 });
     }
     const found = await revokeRecord(id);
     if (!found) {
