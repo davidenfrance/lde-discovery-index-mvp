@@ -24,4 +24,5 @@ export type QueryFilters = {
   jurisdiction?: string;
   currency?: string;
   max_usd?: number;
+  firm?: string;
 };

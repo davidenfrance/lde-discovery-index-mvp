@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
       jurisdiction: searchParams.get("jurisdiction") || undefined,
       currency: searchParams.get("currency") || undefined,
       max_usd: max ? Number(max) : undefined,
+      firm: searchParams.get("firm") || undefined,
     });
     return NextResponse.json({
       count: records.length,

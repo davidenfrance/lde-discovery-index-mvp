@@ -57,6 +57,7 @@ function rowToRecord(row: Record<string, unknown>): CapabilityRecord {
 export async function listLiveRecords(filters: QueryFilters): Promise<CapabilityRecord[]> {
   const db = sql();
   const now = new Date().toISOString();
+  const firm = filters.firm ?? null;
   const rows = await db`
     SELECT * FROM capability_records
     WHERE status = 'active'
@@ -68,6 +69,12 @@ export async function listLiveRecords(filters: QueryFilters): Promise<Capability
         value_band_usd_min <= ${filters.max_usd ?? 0}
         AND value_band_usd_max >= ${filters.max_usd ?? 0}
       ))
+      AND (
+        ${firm}::text IS NULL
+        OR display_name ILIKE '%' || ${firm} || '%'
+        OR COALESCE(evidence->>'firm', '') ILIKE '%' || ${firm} || '%'
+        OR COALESCE(evidence->>'person', '') ILIKE '%' || ${firm} || '%'
+      )
     ORDER BY record_id
   `;
   return (rows as Record<string, unknown>[]).map(rowToRecord);
