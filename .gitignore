@@ -3,3 +3,6 @@ node_modules
 .env
 .env.local
 .vercel
+keystore/
+*.pem
+lawyer_keystore_manifest.json
