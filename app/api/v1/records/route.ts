@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, listLiveRecords, upsertRecord } from "@/lib/db";
 import { normalizeHex, verifyPublishSignature } from "@/lib/auth";
+import {
+  declaredQuery,
+  issueQueryReceipts,
+  parseInterrogatorKey,
+} from "@/lib/receipt";
 import type { CapabilityRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +22,39 @@ export async function GET(req: NextRequest) {
       max_usd: max ? Number(max) : undefined,
       firm: searchParams.get("firm") || undefined,
     });
+
+    const headerKey =
+      req.headers.get("x-ldedi-interrogator-key") ||
+      searchParams.get("interrogator_key");
+    const interrogator = parseInterrogatorKey(headerKey);
+    if (headerKey && !interrogator) {
+      return NextResponse.json({ error: "invalid_interrogator_key" }, { status: 400 });
+    }
+
+    if (!interrogator) {
+      return NextResponse.json({
+        count: records.length,
+        receipts: false,
+        records,
+        note: "Revoked records are not returned. Send X-LDEDI-Interrogator-Key (64 hex) to receive index-signed query receipts.",
+      });
+    }
+
+    const query = declaredQuery({
+      task: searchParams.get("task"),
+      jurisdiction: searchParams.get("jurisdiction"),
+      firm: searchParams.get("firm"),
+      verification: searchParams.get("verification"),
+      language: searchParams.get("language"),
+    });
+    const issued = issueQueryReceipts(records, query, interrogator);
     return NextResponse.json({
-      count: records.length,
-      records,
-      note: "Revoked records are not returned. Locator and First Service are not on this host.",
+      count: issued.records.length,
+      receipts: true,
+      query_id: issued.envelope.query_id,
+      envelope: issued.envelope,
+      records: issued.records,
+      note: "Each row carries an index-signed query receipt. Session hosts should refuse opens without a live receipt for their key_id.",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "query_failed";
