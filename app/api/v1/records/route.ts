@@ -6,9 +6,19 @@ import {
   issueQueryReceipts,
   parseInterrogatorKey,
 } from "@/lib/receipt";
+import { toThin } from "@/lib/thin";
+import { FORM_ID } from "@/lib/gate-form";
+import { ensureGateSchema, getGateOffer } from "@/lib/gate-offers";
 import type { CapabilityRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+function wantsGate(req: NextRequest, searchParams: URLSearchParams): boolean {
+  const q = (searchParams.get("gate") || searchParams.get("receipt") || "").toLowerCase();
+  if (q === "1" || q === "true" || q === "yes") return true;
+  const h = (req.headers.get("x-ldedi-gate") || "").toLowerCase();
+  return h === "1" || h === "true";
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -32,11 +42,13 @@ export async function GET(req: NextRequest) {
     }
 
     if (!interrogator) {
+      const thin = records.map(toThin);
       return NextResponse.json({
-        count: records.length,
+        count: thin.length,
+        grade: "thin",
         receipts: false,
-        records,
-        note: "Revoked records are not returned. Send X-LDEDI-Interrogator-Key (64 hex) to receive index-signed query receipts.",
+        records: thin,
+        note: "Thin public list. No mandate, value band or listing signature. Send X-LDEDI-Interrogator-Key for the fat row. Gating function is required for a signed receipt.",
       });
     }
 
@@ -47,14 +59,53 @@ export async function GET(req: NextRequest) {
       verification: searchParams.get("verification"),
       language: searchParams.get("language"),
     });
+
+    if (!wantsGate(req, searchParams)) {
+      return NextResponse.json({
+        count: records.length,
+        grade: "fat",
+        receipts: false,
+        records,
+        note: "Fat row. Diligence only. Add gate=1 after POST /api/v1/gate/offer and POST /api/v1/gate/accept-mvp to receive a signed receipt.",
+      });
+    }
+
+    const acceptId = searchParams.get("accept_id") || searchParams.get("offer_id");
+    const open = process.env.OPEN_GATE_RECEIPTS === "true";
+    if (!open) {
+      if (!acceptId) {
+        return NextResponse.json(
+          {
+            error: "gating_function_required",
+            form_id: FORM_ID,
+            offer: "POST /api/v1/gate/offer",
+            accept: "POST /api/v1/gate/accept-mvp",
+            note: "A live LDEDI receipt is issued only after the gating function. Stand-in 0.10 on accept-mvp is not GENIUS USD.",
+          },
+          { status: 403 }
+        );
+      }
+      await ensureGateSchema();
+      const offer = await getGateOffer(acceptId);
+      if (!offer || offer.status !== "accepted") {
+        return NextResponse.json({ error: "gate_accept_required" }, { status: 403 });
+      }
+      if (normalizeHex(offer.interrogator_key_id) !== interrogator) {
+        return NextResponse.json({ error: "gate_interrogator_mismatch" }, { status: 403 });
+      }
+    }
+
     const issued = issueQueryReceipts(records, query, interrogator);
     return NextResponse.json({
       count: issued.records.length,
+      grade: "gated",
       receipts: true,
+      form_id: FORM_ID,
+      accept_id: acceptId || null,
       query_id: issued.envelope.query_id,
       envelope: issued.envelope,
       records: issued.records,
-      note: "Each row carries an index-signed query receipt. Session hosts should refuse opens without a live receipt for their key_id.",
+      note: "Gating function complete. Each row carries an index-signed receipt. Session hosts should refuse opens without a live receipt for their key_id.",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "query_failed";
