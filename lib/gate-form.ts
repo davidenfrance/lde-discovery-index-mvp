@@ -1,5 +1,5 @@
-import { createHash, createPrivateKey, createPublicKey, sign, verify } from "crypto";
-import { normalizeHex, normalizePem, signWithPem } from "./auth";
+import { createHash, createPublicKey, verify } from "crypto";
+import { normalizeHex, signWithPem } from "./auth";
 
 export const FORM_ID = "FS-GATE-1.0";
 export const MVP_ASSET = "GATE_MVP";
