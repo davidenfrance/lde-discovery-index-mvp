@@ -1,12 +1,13 @@
 import { createHash, createPublicKey, verify } from "crypto";
 import { normalizeHex, signWithPem } from "./auth";
 
-export const FORM_ID = "FS-GATE-1.0";
-export const MVP_ASSET = "GATE_MVP";
+export const FORM_ID = "FS-RECEIPT-1.0";
+export const FORM_ID_LEGACY = "FS-GATE-1.0";
+export const MVP_ASSET = "RECEIPT_MVP";
 export const MVP_RAIL = "settle-mvp";
 
-export const FORM_TEXT = `FS-GATE-1.0
-London Digital Escrow Discovery Index gating function.
+export const FORM_TEXT = `FS-RECEIPT-1.0
+London Digital Escrow Discovery Index receipt.
 
 This form is consideration for a signed, time-limited receipt of what the index served on one request. It is not a query to London Digital Insurance Limited. It is not a bind and not insurance cover.
 
@@ -14,7 +15,7 @@ The fee amount is stated in the Offer, not in this form, so the amount can chang
 
 By signing the Offer acceptance the interrogating agent agrees that the receipt may be shown to a session host or to the LDI oracle as evidence of this interrogation, and that English law governs this form.
 
-Issuer of the receipt: the LDEDI operator. Insurer named on LDI query forms is not a party to this gating function.`;
+Issuer of the receipt: the LDEDI operator. The insurer named on LDI query forms is not a party to this receipt purchase.`;
 
 export function loadFormText(): string {
   return FORM_TEXT;
@@ -26,11 +27,11 @@ export function formHash(text?: string): string {
 
 export function feeFromEnv() {
   return {
-    fee_amount: process.env.GATE_FEE_AMOUNT || "0.10",
-    fee_currency: process.env.GATE_FEE_CURRENCY || MVP_ASSET,
-    fee_account: process.env.GATE_FEE_ACCOUNT || "ldedi-gating-function",
-    rail: process.env.GATE_FEE_RAIL || MVP_RAIL,
-    not_genius_usd: process.env.GATE_FEE_RAIL !== "genius-usd",
+    fee_amount: process.env.RECEIPT_FEE_AMOUNT || process.env.GATE_FEE_AMOUNT || "0.10",
+    fee_currency: process.env.RECEIPT_FEE_CURRENCY || process.env.GATE_FEE_CURRENCY || MVP_ASSET,
+    fee_account: process.env.RECEIPT_FEE_ACCOUNT || process.env.GATE_FEE_ACCOUNT || "ldedi-receipt",
+    rail: process.env.RECEIPT_FEE_RAIL || process.env.GATE_FEE_RAIL || MVP_RAIL,
+    not_genius_usd: (process.env.RECEIPT_FEE_RAIL || process.env.GATE_FEE_RAIL) !== "genius-usd",
   };
 }
 
@@ -46,7 +47,7 @@ export function canonicalOffer(o: {
   quote_expires_at: string;
 }): string {
   return JSON.stringify({
-    action: "gate_offer",
+    action: "receipt_offer",
     offer_id: o.offer_id,
     form_id: o.form_id,
     form_hash: o.form_hash,
@@ -69,7 +70,7 @@ export function canonicalAccept(o: {
   rail: string;
 }): string {
   return JSON.stringify({
-    action: "gate_accept",
+    action: "receipt_accept",
     offer_id: o.offer_id,
     form_id: o.form_id,
     form_hash: o.form_hash,
