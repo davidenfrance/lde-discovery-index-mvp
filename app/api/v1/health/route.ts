@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { termsNotice } from "@/lib/terms";
 
 export async function GET() {
   return NextResponse.json({
     ok: true,
     service: "lde-discovery-index-mvp",
     stores: ["capability_records", "revocation", "gate_offers"],
+    terms: termsNotice(),
     auth: {
       wallet_allow_list: false,
       capability_records: "signed_with_wallet_id_public_key_bound_on_record",
@@ -16,6 +18,8 @@ export async function GET() {
       receipt: "POST /api/v1/receipt/offer then POST /api/v1/receipt/accept-mvp",
     },
     form_id: "FS-RECEIPT-1.0",
+    terms_id: "LDEDI-TERMS-1.0",
+    terms_url: "https://www.londonagenticnetwork.com/api/v1/terms",
     aliases: {
       "POST /api/v1/gate/offer": "POST /api/v1/receipt/offer",
       "POST /api/v1/gate/accept-mvp": "POST /api/v1/receipt/accept-mvp",
