@@ -11,6 +11,7 @@ import {
 } from "@/lib/gate-form";
 import { ensureGateSchema, insertGateOffer } from "@/lib/gate-offers";
 import { declaredQuery } from "@/lib/receipt";
+import { termsNotice } from "@/lib/terms";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,7 @@ export async function POST(req: NextRequest) {
       form_id: FORM_ID,
       form_hash,
       form_text: loadFormText(),
+      terms: termsNotice(req.url),
       interrogator_key_id,
       query,
       fee_amount: fee.fee_amount,
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest) {
       index_statement: statement,
       index_signature,
       accept: "POST /api/v1/receipt/accept-mvp",
-      note: "Offer under FS-RECEIPT-1.0. Pay the stand-in 0.10 on accept-mvp to receive the signed receipt. This is not an LDI query and not GENIUS USD.",
+      note: "Offer under FS-RECEIPT-1.0. Pay the stand-in 0.10 on accept-mvp to receive the signed receipt. This is not an LDI query and not GENIUS USD. LDEDI-TERMS-1.0 still governs the unpaid look.",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "receipt_offer_failed";

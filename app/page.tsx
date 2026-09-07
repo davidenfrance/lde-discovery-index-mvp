@@ -15,7 +15,7 @@ export default function Home() {
         <li>POST /api/v1/receipt/accept-mvp</li>
         <li>GET /api/v1/records?receipt=1&accept_id=</li>
         <li>POST /api/v1/records (signed with Wallet ID key)</li>
-        <li>POST /api/v1/records/{id}/revoke</li>
+        <li>POST /api/v1/records/{"{id}"}/revoke</li>
       </ul>
       <p>Verified. Validated. Vested.</p>
     </main>
