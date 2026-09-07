@@ -9,6 +9,7 @@ import {
 import { toThin } from "@/lib/thin";
 import { FORM_ID } from "@/lib/gate-form";
 import { ensureGateSchema, getGateOffer } from "@/lib/gate-offers";
+import { termsNotice } from "@/lib/terms";
 import type { CapabilityRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -32,13 +33,14 @@ export async function GET(req: NextRequest) {
       max_usd: max ? Number(max) : undefined,
       firm: searchParams.get("firm") || undefined,
     });
+    const terms = termsNotice(req.url);
 
     const headerKey =
       req.headers.get("x-ldedi-interrogator-key") ||
       searchParams.get("interrogator_key");
     const interrogator = parseInterrogatorKey(headerKey);
     if (headerKey && !interrogator) {
-      return NextResponse.json({ error: "invalid_interrogator_key" }, { status: 400 });
+      return NextResponse.json({ error: "invalid_interrogator_key", terms }, { status: 400 });
     }
 
     if (!interrogator) {
@@ -47,8 +49,9 @@ export async function GET(req: NextRequest) {
         count: thin.length,
         grade: "thin",
         receipts: false,
+        terms,
         records: thin,
-        note: "Thin public list. No mandate, value band or listing signature. Send X-LDEDI-Interrogator-Key for the fat row. Pay for a signed receipt at POST /api/v1/receipt/offer.",
+        note: "Thin public list. Notice of LDEDI-TERMS-1.0 only. No contract. No mandate, value band or listing signature. Adults in trade only. Send X-LDEDI-Interrogator-Key for the fat row. Pay for a signed receipt at POST /api/v1/receipt/offer.",
       });
     }
 
@@ -65,8 +68,9 @@ export async function GET(req: NextRequest) {
         count: records.length,
         grade: "fat",
         receipts: false,
+        terms,
         records,
-        note: "Fat row. Diligence only. Buy a receipt: POST /api/v1/receipt/offer then POST /api/v1/receipt/accept-mvp.",
+        note: "Fat row. Diligence only. Notice of LDEDI-TERMS-1.0 only. Not a Receipt. Buy a receipt: POST /api/v1/receipt/offer then POST /api/v1/receipt/accept-mvp.",
       });
     }
 
@@ -80,7 +84,8 @@ export async function GET(req: NextRequest) {
             form_id: FORM_ID,
             offer: "POST /api/v1/receipt/offer",
             accept: "POST /api/v1/receipt/accept-mvp",
-            note: "A live LDEDI receipt is issued only after you pay the stand-in 0.10 on accept-mvp. That is not GENIUS USD and not an LDI query.",
+            terms,
+            note: "A live LDEDI receipt is issued only after you pay the stand-in 0.10 on accept-mvp. That is not GENIUS USD and not an LDI query. Seeing the listing is not acceptance of FS-RECEIPT-1.0.",
           },
           { status: 403 }
         );
@@ -88,10 +93,10 @@ export async function GET(req: NextRequest) {
       await ensureGateSchema();
       const offer = await getGateOffer(acceptId);
       if (!offer || offer.status !== "accepted") {
-        return NextResponse.json({ error: "receipt_accept_required" }, { status: 403 });
+        return NextResponse.json({ error: "receipt_accept_required", terms }, { status: 403 });
       }
       if (normalizeHex(offer.interrogator_key_id) !== interrogator) {
-        return NextResponse.json({ error: "receipt_interrogator_mismatch" }, { status: 403 });
+        return NextResponse.json({ error: "receipt_interrogator_mismatch", terms }, { status: 403 });
       }
     }
 
@@ -104,8 +109,9 @@ export async function GET(req: NextRequest) {
       accept_id: acceptId || null,
       query_id: issued.envelope.query_id,
       envelope: issued.envelope,
+      terms,
       records: issued.records,
-      note: "Receipt paid. Each row carries an index-signed receipt. Session hosts should refuse opens without a live receipt for their key_id.",
+      note: "Receipt paid under FS-RECEIPT-1.0. Each row carries an index-signed receipt. English law. Session hosts should refuse opens without a live receipt for their key_id.",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "query_failed";
